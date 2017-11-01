@@ -1,7 +1,7 @@
 # Work derived from official PHP Docker Library:
 # Copyright (c) 2014-2015 Docker, Inc.
 
-FROM debian:wheezy
+FROM php:5.6-fpm-jessie
 
 LABEL "com.themeisle.dev"="ThemeIsle"
 LABEL "maintainer"="bogdan.preda@themeisle.com"
@@ -9,118 +9,26 @@ LABEL "author"="Bogdan Preda"
 LABEL "version"="1.0"
 LABEL "description"="A docker container w. php 5.6.*, mysql, wp-cli, phpunit, composer and git."
 
-RUN apt-get update && apt-get install -y mysql-server libmysqlclient-dev --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt-get update \
-    && apt-get install -y ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# gpg: key 5072E1F5: public key "MySQL Release Engineering <mysql-build@oss.oracle.com>" imported
+RUN set -ex; \
+	key='A4A9406876FCBD3C456770C88C718D3B5072E1F5'; \
+	export GNUPGHOME="$(mktemp -d)"; \
+	gpg --keyserver ha.pool.sks-keyservers.net --recv-keys "$key"; \
+	gpg --export "$key" > /etc/apt/trusted.gpg.d/mysql.gpg; \
+	rm -r "$GNUPGHOME"; \
+	apt-key list > /dev/null
 
-ENV PHP_INI_DIR /usr/local/etc/php
-RUN mkdir -p $PHP_INI_DIR/conf.d
+ENV MYSQL_MAJOR 5.7
+ENV MYSQL_VERSION 5.7.20-1debian8
 
-ENV PHP_EXTRA_CONFIGURE_ARGS --enable-fpm --with-fpm-user=www-data --with-fpm-group=www-data
+RUN echo "deb http://repo.mysql.com/apt/debian/ jessie mysql-${MYSQL_MAJOR}" > /etc/apt/sources.list.d/mysql.list
 
-ENV buildDeps=" \
-        bzip2 \
-        file \
-        libcurl4-openssl-dev \
-        libreadline6-dev \
-        libssl-dev \
-        libxml2-dev \
-        curl \
-        libxml2 \
-        autoconf \
-        gcc \
-        libc-dev \
-        make \
-        patch \
-        pkg-config \
-    "
-
-RUN set -x \
-    && apt-get update && apt-get install -y $buildDeps --no-install-recommends && rm -rf /var/lib/apt/lists/* \
-    && curl -SL "http://uk1.php.net/get/php-5.6.12.tar.gz/from/this/mirror" -o php.tar.bz \
-    && mkdir -p /usr/src/php \
-    && tar -xf php.tar.bz -C /usr/src/php --strip-components=1 \
-    && rm php.tar.bz* \
-    && cd /usr/src/php \
-    && ./configure \
-        --with-config-file-path="$PHP_INI_DIR" \
-        --with-config-file-scan-dir="$PHP_INI_DIR/conf.d" \
-        $PHP_EXTRA_CONFIGURE_ARGS \
-        --disable-cgi \
-        --enable-mysqlnd \
-        --enable-pdo \
-        --with-mysql \
-        --with-pdo-mysql \
-        --with-curl \
-        --with-openssl \
-        --with-readline \
-        --with-zlib \
-    && make -j"$(nproc)" \
-    && make install \
-    && { find /usr/local/bin /usr/local/sbin -type f -executable -exec strip --strip-all '{}' + || true; } \
-    && make clean \
-    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false -o APT::AutoRemove::SuggestsImportant=false $buildDeps \
-    && apt-get autoremove
-
-COPY docker-php-ext-* /usr/local/bin/
-
-RUN chmod +x /usr/local/bin/docker-php-ext-configure \
-    && chmod +x /usr/local/bin/docker-php-ext-install
-
-ENV extensionDeps=" \
-        autoconf \
-        gcc \
-        make \
-        rsync \
-        libpng12-dev \
-        libmcrypt-dev \
-        libxml2-dev \
-        libssl-dev \
-        curl \
-    "
-
-RUN extensions=" \
-        gd \
-        mysqli \
-        soap \
-        zip \
-        mcrypt \
-        mbstring \
-    "; \
-    apt-get update && apt-get install -y --no-install-recommends $extensionDeps \
-    && docker-php-ext-install $extensions \
-    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false -o APT::AutoRemove::SuggestsImportant=false $extensionDeps \
-    && apt-get autoremove
-
-ENV peclDeps=" \
-    curl \
-    libssl-dev \
-    libxml2-dev \
-    make \
-    autoconf \
-    gcc \
-    "
-
-RUN apt-get update && apt-get install -y --no-install-recommends $peclDeps \
-    && pecl install memcache && echo extension=memcache.so > $PHP_INI_DIR/conf.d/ext-memcache.ini \
-    && pecl install redis && echo extension=redis.so > $PHP_INI_DIR/conf.d/ext-redis.ini \
-    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false -o APT::AutoRemove::SuggestsImportant=false $peclDeps \
-    && apt-get autoremove
-
-WORKDIR /var/www/html
-COPY php-fpm.conf /usr/local/etc/
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libxml2 \
-    libpng12-dev \
-    mcrypt \
-    curl \
-    libmcrypt4 \
-    less \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y mysql-server="${MYSQL_VERSION}" && rm -rf /var/lib/apt/lists/* \
+	&& rm -rf /var/lib/mysql && mkdir -p /var/lib/mysql /var/run/mysqld \
+	&& chown -R mysql:mysql /var/lib/mysql /var/run/mysqld \
+	&& chmod 777 /var/run/mysqld
 
 RUN curl -SL --insecure "https://phar.phpunit.de/phpunit.phar" -o phpunit.phar \
     && chmod +x phpunit.phar \
@@ -138,6 +46,8 @@ RUN curl --insecure -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/
 
 RUN curl -sS https://getcomposer.org/installer | php \
     && mv composer.phar /usr/local/bin/composer
+
+RUN service mysql stop
 
 RUN service mysql start \
     && mysql --user="root" --execute="CREATE DATABASE test;"
