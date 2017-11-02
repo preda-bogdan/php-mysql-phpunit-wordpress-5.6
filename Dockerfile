@@ -20,7 +20,7 @@ RUN { \
 
 VOLUME /var/lib/mysql
 
-RUN curl -SL --insecure "https://phar.phpunit.de/phpunit.phar" -o phpunit.phar \
+RUN curl -SL --insecure "https://phar.phpunit.de/phpunit-5.7.phar" -o phpunit.phar \
     && chmod +x phpunit.phar \
     && mv phpunit.phar /usr/bin/phpunit
 
